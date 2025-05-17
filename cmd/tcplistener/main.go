@@ -23,10 +23,16 @@ func main() {
 
 		r, err := request.RequestFromReader(conn)
 		if err != nil {
-			log.Fatal()
+			log.Fatal(err)
 		}
 
-		fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n",
+		rLine := fmt.Sprintf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s\n",
 			r.RequestLine.Method, r.RequestLine.RequestTarget, r.RequestLine.HttpVersion)
+		headers := "Headers:\n"
+		for k, v := range r.Headers {
+			headers += fmt.Sprintf("- %s: %s\n", k, v)
+		}
+
+		fmt.Print(rLine + headers)
 	}
 }

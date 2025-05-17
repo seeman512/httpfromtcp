@@ -3,6 +3,7 @@ package request
 import (
 	"bytes"
 	"errors"
+	"httpfromtcp/internal/headers"
 	"io"
 	"regexp"
 	"strings"
@@ -15,7 +16,9 @@ const bufferSize = 8
 type ParseState int
 
 var Initialized ParseState = 0
-var Done ParseState = 1
+var ParsedRequestLine ParseState = 1
+var ParsedHeaders ParseState = 2
+var Done ParseState = 3
 
 var (
 	ErrEmptyBody          = errors.New("empty body")
@@ -34,6 +37,7 @@ type RequestLine struct {
 type Request struct {
 	state       ParseState
 	RequestLine RequestLine
+	Headers     headers.Headers
 }
 
 func parseRequestLine(data []byte) (int, *RequestLine, error) {
@@ -71,18 +75,41 @@ func parseRequestLine(data []byte) (int, *RequestLine, error) {
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	n, requestLine, err := parseRequestLine(data)
-	if err != nil {
-		return 0, err
+	if r.state == Done {
+		return 0, nil
 	}
 
-	if n == 0 {
+	if r.state == Initialized {
+		n, requestLine, err := parseRequestLine(data)
+		if err != nil {
+			return 0, err
+		}
+
+		if n == 0 {
+			return n, nil
+		}
+
+		r.RequestLine = *requestLine
+		r.state = ParsedRequestLine
 		return n, nil
 	}
 
-	r.RequestLine = *requestLine
-	r.state = Done
-	return n, nil
+	if r.state == ParsedRequestLine {
+		n, done, err := r.Headers.Parse(data)
+
+		if err != nil {
+			return n, err
+		}
+
+		if done {
+			// r.state = ParsedHeaders
+			r.state = Done
+		}
+
+		return n, nil
+	}
+
+	return 0, errors.New("uknown parse error")
 }
 
 func parseMethod(method string) (string, error) {
@@ -105,7 +132,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
 
-	r := Request{state: Initialized}
+	r := Request{
+		state:   Initialized,
+		Headers: headers.NewHeaders(),
+	}
 	i := 1
 
 	for r.state != Done {
@@ -121,7 +151,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				r.state = Done
+				// r.state = Done
 			} else {
 				return nil, err
 			}
@@ -140,7 +170,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		l := len(buf[n:])
 		tmpBuff := make([]byte, l)
-		copy(tmpBuff, buf)
+		copy(tmpBuff, buf[n:])
 		buf = tmpBuff
 		readToIndex -= n
 	}
