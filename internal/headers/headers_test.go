@@ -53,7 +53,7 @@ func TestHeadersParse(t *testing.T) {
 		},
 		{
 			input:    "\r\n Body Message\r\n",
-			n:        0,
+			n:        2,
 			done:     true,
 			err:      nil,
 			checkKey: false,

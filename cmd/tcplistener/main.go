@@ -33,6 +33,8 @@ func main() {
 			headers += fmt.Sprintf("- %s: %s\n", k, v)
 		}
 
-		fmt.Print(rLine + headers)
+		body := fmt.Sprintf("Body:\n%s\n", string(r.Body))
+
+		fmt.Print(rLine + headers + body)
 	}
 }

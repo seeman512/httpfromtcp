@@ -6,6 +6,7 @@ import (
 	"httpfromtcp/internal/headers"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -21,11 +22,12 @@ var ParsedHeaders ParseState = 2
 var Done ParseState = 3
 
 var (
-	ErrEmptyBody          = errors.New("empty body")
+	ErrEmptyRequestLine   = errors.New("empty request line")
 	ErrWrongPartsCnt      = errors.New("wrong parts; should be 3")
 	ErrWrongVersionFormat = errors.New("wrong version format")
 	ErrWrongTargetFormat  = errors.New("wrong target format")
 	ErrWrongMethodFormat  = errors.New("wrong method format")
+	ErrWrongBodyLength    = errors.New("wrong body length")
 )
 
 type RequestLine struct {
@@ -38,6 +40,7 @@ type Request struct {
 	state       ParseState
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 }
 
 func parseRequestLine(data []byte) (int, *RequestLine, error) {
@@ -49,7 +52,7 @@ func parseRequestLine(data []byte) (int, *RequestLine, error) {
 
 	requestLine := string(data[:idx])
 	if requestLine == "" {
-		return 0, nil, ErrEmptyBody
+		return 0, nil, ErrEmptyRequestLine
 	}
 
 	parts := strings.Split(requestLine, partsSeparator)
@@ -74,11 +77,12 @@ func parseRequestLine(data []byte) (int, *RequestLine, error) {
 	}, nil
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parse(data []byte, eof bool) (int, error) {
 	if r.state == Done {
 		return 0, nil
 	}
 
+	// parse request line
 	if r.state == Initialized {
 		n, requestLine, err := parseRequestLine(data)
 		if err != nil {
@@ -94,6 +98,7 @@ func (r *Request) parse(data []byte) (int, error) {
 		return n, nil
 	}
 
+	// parse headers
 	if r.state == ParsedRequestLine {
 		n, done, err := r.Headers.Parse(data)
 
@@ -102,11 +107,36 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 
 		if done {
-			// r.state = ParsedHeaders
-			r.state = Done
+			r.state = ParsedHeaders
 		}
 
 		return n, nil
+	}
+
+	// parse body
+	if r.state == ParsedHeaders {
+		val, ok := r.Headers.Get("content-length")
+		if !ok {
+			r.state = Done
+			return 0, nil
+		}
+
+		length, err := strconv.Atoi(val)
+		if err != nil {
+			return 0, err
+		}
+
+		l := len(data)
+		if eof {
+			if length != l {
+				return 0, ErrWrongBodyLength
+			}
+			r.state = Done
+			r.Body = data[:]
+			return l, nil
+		} else {
+			return 0, nil
+		}
 	}
 
 	return 0, errors.New("uknown parse error")
@@ -138,6 +168,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	}
 	i := 1
 
+	eof := false
+
 	for r.state != Done {
 		// buffer is full, twice buffer size and copy
 		if readToIndex >= len(buf)-1 {
@@ -152,6 +184,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				// r.state = Done
+				eof = true
 			} else {
 				return nil, err
 			}
@@ -159,7 +192,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		readToIndex += n
 
-		n, err = r.parse(buf[:readToIndex])
+		n, err = r.parse(buf[:readToIndex], eof)
 		if err != nil {
 			return nil, err
 		}

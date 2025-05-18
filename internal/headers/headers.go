@@ -23,6 +23,11 @@ func NewHeaders() Headers {
 	return map[string]string{}
 }
 
+func (h Headers) Get(key string) (string, bool) {
+	val, ok := h[key]
+	return val, ok
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	nlIdx := bytes.Index(data, []byte(lineSeparator))
 
