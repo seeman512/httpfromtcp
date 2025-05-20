@@ -5,6 +5,7 @@ import (
 	"errors"
 	"httpfromtcp/internal/headers"
 	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -166,15 +167,17 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		state:   Initialized,
 		Headers: headers.NewHeaders(),
 	}
-	i := 1
 
 	eof := false
 
 	for r.state != Done {
+		if eof {
+			break
+		}
 		// buffer is full, twice buffer size and copy
 		if readToIndex >= len(buf)-1 {
-			i++
-			tmpBuff := make([]byte, bufferSize*i)
+			bufLen := max(bufferSize, len(buf)*2)
+			tmpBuff := make([]byte, bufLen)
 			copy(tmpBuff, buf)
 			buf = tmpBuff
 		}
@@ -182,7 +185,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[readToIndex:])
 
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || errors.Is(err, os.ErrDeadlineExceeded) {
 				// r.state = Done
 				eof = true
 			} else {
@@ -193,6 +196,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		readToIndex += n
 
 		n, err = r.parse(buf[:readToIndex], eof)
+
 		if err != nil {
 			return nil, err
 		}

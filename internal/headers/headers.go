@@ -3,7 +3,9 @@ package headers
 import (
 	"bytes"
 	"errors"
+	"maps"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -69,4 +71,24 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		h[key] = right
 	}
 	return nlIdx + 2, done, nil
+}
+
+func (h Headers) SetDefault(contentLen int, customHeaders map[string]string) {
+
+	h["content-length"] = strconv.Itoa(contentLen)
+	h["connection"] = "close"
+	h["content-type"] = "text/plain"
+
+	if customHeaders == nil {
+		return
+	}
+
+	maps.Copy(h, customHeaders)
+	// for k, v := range customHeaders {
+	// 	h[k] = v
+	// }
+}
+
+func (h Headers) Set(customHeaders map[string]string) {
+	maps.Copy(h, customHeaders)
 }
